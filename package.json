@@ -1,0 +1,128 @@
+{
+  "name": "T1000",
+  "author": "Andrew Childs",
+  "version": "1.0.0",
+  "description": "Displays real-time Dexcom CGM glucose data on your Pebble watch. Features current glucose value with trend arrow, delta (rate of change), time since last reading, and a 90-minute history chart with threshold lines. Configurable units (mg/dL or mmol/L) and alert thresholds. Requires Dexcom CGM with Share enabled and Dexcom Share account credentials.",
+  "private": true,
+  "keywords": [
+    "pebble-app"
+  ],
+  "dependencies": {
+    "pebble-clay": "^1.0.4"
+  },
+  "pebble": {
+    "sdkVersion": "3",
+    "targetPlatforms": [
+      "aplite"
+    ],
+    "enableMultiJS": true,
+    "capabilities": [
+      "configurable"
+    ],
+    "projectType": "native",
+    "displayName": "T1000",
+    "uuid": "e307c458-7520-48cb-9308-815eb50411e9",
+    "watchapp": {
+      "watchface": true,
+      "hiddenApp": false,
+      "onlyShownOnCommunication": false
+    },
+    "resources": {
+      "media": [
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_NONE",
+          "file": "images/trend_none.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOUBLE_UP",
+          "file": "images/trend_double_up.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_UP",
+          "file": "images/trend_up.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_UP_45",
+          "file": "images/trend_up_45.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_FLAT",
+          "file": "images/trend_flat.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOWN_45",
+          "file": "images/trend_down_45.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOWN",
+          "file": "images/trend_down.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOUBLE_DOWN",
+          "file": "images/trend_double_down.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_NONE_BLACK",
+          "file": "images/trend_none_black.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOUBLE_UP_BLACK",
+          "file": "images/trend_double_up_black.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_UP_BLACK",
+          "file": "images/trend_up_black.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_UP_45_BLACK",
+          "file": "images/trend_up_45_black.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_FLAT_BLACK",
+          "file": "images/trend_flat_black.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOWN_45_BLACK",
+          "file": "images/trend_down_45_black.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOWN_BLACK",
+          "file": "images/trend_down_black.png"
+        },
+        {
+          "type": "png-trans",
+          "name": "IMAGE_TREND_DOUBLE_DOWN_BLACK",
+          "file": "images/trend_double_down_black.png"
+        }
+      ]
+    },
+    "messageKeys": {
+      "cgm_value": 0,
+      "cgm_delta": 1,
+      "cgm_trend": 2,
+      "cgm_time_ago": 3,
+      "cgm_history": 4,
+      "cgm_alert": 5,
+      "request_data": 6,
+      "low_threshold": 7,
+      "high_threshold": 8,
+      "needs_setup": 9,
+      "reversed": 10
+    }
+  }
+}

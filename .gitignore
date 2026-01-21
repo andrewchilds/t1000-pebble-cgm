@@ -1,0 +1,17 @@
+.DS_Store
+build
+node_modules
+
+# Pebble SDK
+.lock-waf_*
+
+# Editor/IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Debug/logs
+*.log
+npm-debug.log*
