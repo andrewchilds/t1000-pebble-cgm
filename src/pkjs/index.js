@@ -67,10 +67,95 @@ var settings = {
 	vibeRepeatMinutes: 60
 };
 
-// Vibration state
-var lastVibeTime = null;
-var vibeConditionStartTime = null;
+// Vibration state (persisted to localStorage to survive app restarts)
+var vibeHighConditionStartTime = null;
+var lastHighVibeTime = null;
 var lastLowSoonVibeTime = null;
+
+/**
+ * Load persisted vibration state from localStorage
+ */
+function loadVibeState() {
+	var stored = localStorage.getItem("vibe-state");
+	if (stored) {
+		try {
+			var parsed = JSON.parse(stored);
+			vibeHighConditionStartTime = parsed.vibeHighConditionStartTime || null;
+			lastHighVibeTime = parsed.lastHighVibeTime || null;
+			lastLowSoonVibeTime = parsed.lastLowSoonVibeTime || null;
+			console.log("Vibe state loaded: highStart=" + vibeHighConditionStartTime +
+				", lastHigh=" + lastHighVibeTime + ", lastLowSoon=" + lastLowSoonVibeTime);
+		} catch (e) {
+			console.log("Error parsing vibe state: " + e);
+		}
+	}
+}
+
+/**
+ * Save vibration state to localStorage
+ */
+function saveVibeState() {
+	var state = {
+		vibeHighConditionStartTime: vibeHighConditionStartTime,
+		lastHighVibeTime: lastHighVibeTime,
+		lastLowSoonVibeTime: lastLowSoonVibeTime
+	};
+	localStorage.setItem("vibe-state", JSON.stringify(state));
+}
+
+/**
+ * Cache CGM readings to localStorage
+ */
+function cacheReadings(readings) {
+	if (!readings || readings.length === 0) {
+		return;
+	}
+	var cache = {
+		readings: readings,
+		cachedAt: Date.now()
+	};
+	localStorage.setItem("cgm-cache", JSON.stringify(cache));
+	console.log("Cached " + readings.length + " readings");
+}
+
+/**
+ * Get cached readings if still valid (latest reading is less than 5 minutes old)
+ * Returns null if cache is invalid or stale
+ */
+function getCachedReadings() {
+	var stored = localStorage.getItem("cgm-cache");
+	if (!stored) {
+		return null;
+	}
+
+	try {
+		var cache = JSON.parse(stored);
+		if (!cache.readings || cache.readings.length === 0) {
+			return null;
+		}
+
+		// Check if the latest reading's timestamp is less than 5 minutes old
+		var latestTimestamp = parseDexcomTimestamp(cache.readings[0].WT);
+		if (!latestTimestamp) {
+			return null;
+		}
+
+		var now = Date.now();
+		var ageMs = now - latestTimestamp;
+		var ageMinutes = ageMs / 60000;
+
+		if (ageMinutes < 5) {
+			console.log("Using cached readings (latest is " + ageMinutes.toFixed(1) + " min old)");
+			return cache.readings;
+		} else {
+			console.log("Cache stale (latest is " + ageMinutes.toFixed(1) + " min old)");
+			return null;
+		}
+	} catch (e) {
+		console.log("Error parsing CGM cache: " + e);
+		return null;
+	}
+}
 
 // Alert types to send to watch
 var ALERT_NONE = 0;
@@ -260,14 +345,19 @@ function parseDexcomTimestamp(dtString) {
 /**
  * Process glucose readings and send to watch
  */
-function processReadings(readings) {
+function processReadings(readings, fromCache) {
 	if (!readings || readings.length === 0) {
 		console.log("No readings received");
 		sendError("No data");
 		return;
 	}
 
-	console.log("Processing " + readings.length + " readings");
+	// Cache fresh readings from the API
+	if (!fromCache) {
+		cacheReadings(readings);
+	}
+
+	console.log("Processing " + readings.length + " readings" + (fromCache ? " (from cache)" : ""));
 
 	// Most recent reading
 	var latest = readings[0];
@@ -445,11 +535,12 @@ function checkLowSoonAlert(readings) {
 			);
 			pendingAlert = ALERT_LOW_SOON;
 			lastLowSoonVibeTime = now;
+			saveVibeState();
 		}
-	} else {
-		// Reset vibration tracking when condition clears
-		lastLowSoonVibeTime = null;
 	}
+	// Note: We intentionally do NOT reset lastLowSoonVibeTime when the condition clears.
+	// This ensures that if the user briefly rises above the threshold and then falls back,
+	// they won't get repeated alerts within the repeat interval.
 }
 
 /**
@@ -465,20 +556,20 @@ function checkVibrationAlert(value) {
 
 	if (isHighAlert) {
 		// Start tracking condition if not already
-		if (!vibeConditionStartTime) {
-			vibeConditionStartTime = now;
+		if (!vibeHighConditionStartTime) {
+			vibeHighConditionStartTime = now;
 		}
 
-		var conditionDuration = (now - vibeConditionStartTime) / 60000; // minutes
+		var conditionDuration = (now - vibeHighConditionStartTime) / 60000; // minutes
 
 		// Check if delay has passed
 		if (conditionDuration >= settings.vibeDelayMinutes) {
 			// Check if we should vibrate (first time or repeat interval passed)
 			var shouldVibe = false;
-			if (!lastVibeTime) {
+			if (!lastHighVibeTime) {
 				shouldVibe = true;
 			} else {
-				var timeSinceVibe = (now - lastVibeTime) / 60000; // minutes
+				var timeSinceVibe = (now - lastHighVibeTime) / 60000; // minutes
 				if (timeSinceVibe >= settings.vibeRepeatMinutes) {
 					shouldVibe = true;
 				}
@@ -487,13 +578,17 @@ function checkVibrationAlert(value) {
 			if (shouldVibe) {
 				console.log("Triggering high alert vibration");
 				pendingAlert = ALERT_HIGH;
-				lastVibeTime = now;
+				lastHighVibeTime = now;
+				saveVibeState();
 			}
 		}
 	} else {
-		// Reset vibration tracking when condition clears
-		vibeConditionStartTime = null;
-		lastVibeTime = null;
+		// Reset condition start time when condition clears (so delay timer restarts)
+		// but keep lastHighVibeTime to prevent repeated alerts within repeat interval
+		if (vibeHighConditionStartTime !== null) {
+			vibeHighConditionStartTime = null;
+			saveVibeState();
+		}
 	}
 }
 
@@ -526,6 +621,13 @@ function fetchData() {
 	if (!settings.accountName || !settings.password) {
 		console.log("No credentials configured");
 		sendError("Setup", true);
+		return;
+	}
+
+	// Check cache first - use cached data if latest reading is less than 5 minutes old
+	var cachedReadings = getCachedReadings();
+	if (cachedReadings) {
+		processReadings(cachedReadings, true);
 		return;
 	}
 
@@ -686,6 +788,7 @@ Pebble.addEventListener("webviewclosed", function (e) {
 Pebble.addEventListener("ready", function () {
 	console.log("T1000 PebbleKit JS ready");
 	loadSettings();
+	loadVibeState();
 	fetchData();
 });
 

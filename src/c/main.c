@@ -297,8 +297,8 @@ static void update_layout_for_cgm_text(const char *cgm_text) {
 
     // Position trend arrow just after the CGM text
     // 4 is CGM layer x offset, add small gap after text
-    int trend_x = 4 + text_size.w + 2;
-    int delta_x = trend_x + 31;  // 30px icon + 1px gap
+    int trend_x = 4 + text_size.w + 3;
+    int delta_x = trend_x + 33;
 
     layer_set_frame(bitmap_layer_get_layer(s_trend_layer),
                     GRect(trend_x, cgmValueYPos + 13, 30, 30));
@@ -436,7 +436,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         uint8_t alert_type = alert_tuple->value->uint8;
         if (alert_type == ALERT_LOW_SOON) {
             // Low soon alert: accelerating pattern
-            static const uint32_t low_soon_pattern[] = { 100, 300, 100, 200, 100, 100, 100 };
+            static const uint32_t low_soon_pattern[] = { 70, 300, 70, 200, 70, 120, 70, 80, 70 };
             vibes_enqueue_custom_pattern((VibePattern) {
                 .durations = low_soon_pattern,
                 .num_segments = ARRAY_LENGTH(low_soon_pattern)
@@ -444,7 +444,7 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
             APP_LOG(APP_LOG_LEVEL_INFO, "Low soon alert vibration triggered");
         } else if (alert_type == ALERT_HIGH) {
             // High alert pattern
-            static const uint32_t high_pattern[] = { 180, 200, 200, 300, 240 };
+            static const uint32_t high_pattern[] = { 90, 120, 90, 200, 90, 300, 90 };
             vibes_enqueue_custom_pattern((VibePattern) {
                 .durations = high_pattern,
                 .num_segments = ARRAY_LENGTH(high_pattern)
