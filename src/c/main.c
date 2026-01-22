@@ -2,7 +2,7 @@
  * T1000 CGM Watchface
  *
  * A Pebble watchface for displaying Dexcom CGM data.
- * Displays: Time, Date, CGM value, trend arrow, delta, and 90-minute chart.
+ * Displays: Time, Date, CGM value, trend arrow, delta, and 120-minute chart.
  */
 
 #include <pebble.h>
@@ -36,7 +36,8 @@
 #define ALERT_HIGH        2
 
 // Chart configuration
-#define CHART_MAX_POINTS  18  // 90 minutes / 5 minutes = 18 points
+#define CHART_MAX_POINTS  24  // 120 minutes / 5 minutes = 24 points
+#define CHART_DOT_SPACING 6   // Pixels between dots (was ~8px when auto-calculated)
 #define CHART_Y_MIN       40
 #define CHART_Y_MAX       300
 #define CHART_DOT_RADIUS  3
@@ -216,15 +217,15 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
     graphics_context_set_fill_color(ctx, fg_color);
 
     // Calculate pixel offset: smooth scroll left based on how stale the data is
-    // Chart spans 90 minutes (CHART_MAX_POINTS - 1 = 17 intervals of 5 min each)
+    // Chart spans 120 minutes (CHART_MAX_POINTS - 1 = 23 intervals of 5 min each)
     int pixel_offset = 0;
     if (s_last_data_time > 0 && s_last_minutes_ago >= 0) {
         time_t now = time(NULL);
         int elapsed_minutes = (int)((now - s_last_data_time) / 60);
         int current_minutes_ago = s_last_minutes_ago + elapsed_minutes;
-        // Convert minutes to pixels: chart_width pixels = 85 minutes (17 * 5)
-        // pixels_per_minute = chart_width / 85
-        pixel_offset = (current_minutes_ago * chart_width) / ((CHART_MAX_POINTS - 1) * 5);
+        // Convert minutes to pixels using fixed dot spacing
+        // pixels_per_minute = CHART_DOT_SPACING / 5
+        pixel_offset = (current_minutes_ago * CHART_DOT_SPACING) / 5;
     }
 
     for (int i = 0; i < s_chart_count; i++) {
@@ -236,9 +237,9 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
 
         // Calculate X position (rightmost = most recent = index 0)
         // Apply pixel offset to smoothly shift dots left based on data staleness
-        // Keep multiplication before division for precision
+        // Use fixed dot spacing instead of dynamic calculation
         int x = bounds.origin.x + bounds.size.w - margin -
-                (i * chart_width / (CHART_MAX_POINTS - 1)) - pixel_offset;
+                (i * CHART_DOT_SPACING) - pixel_offset;
 
         // Calculate Y position (invert because screen Y increases downward)
         int y = bounds.origin.y + margin + chart_height -

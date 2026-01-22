@@ -231,14 +231,14 @@ function dexcomFetchReadings() {
 	}
 
 	var baseUrl = getDexcomBaseUrl();
-	// Fetch 18 readings for 90 minutes of data (18 * 5 = 90)
+	// Fetch 24 readings for 120 minutes of data (24 * 5 = 120)
 	var url =
 		baseUrl +
 		"/ShareWebServices/Services/Publisher/ReadPublisherLatestGlucoseValues" +
 		"?sessionID=" +
 		encodeURIComponent(sessionId) +
 		"&minutes=1440" +
-		"&maxCount=18";
+		"&maxCount=24";
 
 	console.log("Fetching glucose readings...");
 
