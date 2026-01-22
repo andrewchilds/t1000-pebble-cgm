@@ -11,7 +11,7 @@ A Pebble watchface that displays real-time Dexcom CGM glucose data.
 - Current glucose value with trend arrow
 - Delta (rate of change)
 - Time since last reading
-- 90-minute history chart
+- 2 hour CGM history
 - Supports mg/dL and mmol/L
 - Configurable high/low threshold lines
 - Configurable high/low alerts
