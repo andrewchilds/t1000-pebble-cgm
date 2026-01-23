@@ -23,9 +23,14 @@ A Pebble watchface that displays real-time Dexcom CGM glucose data and provides 
 
 ## Requirements
 
-- B&W Pebble / Core 2 Duo watch (Aplite)
+- Pebble / 2 / 2 Duo (Aplite)
 - Dexcom CGM with Share enabled
 - Dexcom Share account credentials
+
+## Installation Instructions
+
+Install from the Rebble app store:
+https://apps.rebble.io/en_US/application/6972fd68ae32660009f7c242
 
 ## Building
 
