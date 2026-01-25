@@ -105,6 +105,9 @@ static int s_high_threshold = 180;
 // Display mode (false = white on black, true = black on white)
 static bool s_reversed = false;
 
+// Retry tracking for outbox failures
+static bool s_is_retry = false;
+
 // Forward declaration
 static void update_trend_icon(uint8_t trend);
 static void update_layout_for_cgm_text(const char *cgm_text);
@@ -490,10 +493,29 @@ static void inbox_dropped_callback(AppMessageResult reason, void *context) {
 }
 
 /**
- * AppMessage failed callback
+ * AppMessage failed callback - retry once on failure
  */
 static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResult reason, void *context) {
     APP_LOG(APP_LOG_LEVEL_ERROR, "Outbox send failed: %d", reason);
+
+    // Only retry once to avoid infinite loops
+    if (!s_is_retry) {
+        APP_LOG(APP_LOG_LEVEL_INFO, "Retrying outbox send...");
+        s_is_retry = true;
+
+        DictionaryIterator *retry_iter;
+        AppMessageResult result = app_message_outbox_begin(&retry_iter);
+        if (result == APP_MSG_OK && retry_iter) {
+            dict_write_uint8(retry_iter, KEY_REQUEST_DATA, 1);
+            app_message_outbox_send();
+        } else {
+            APP_LOG(APP_LOG_LEVEL_ERROR, "Retry outbox_begin failed: %d", result);
+            s_is_retry = false;
+        }
+    } else {
+        APP_LOG(APP_LOG_LEVEL_ERROR, "Retry also failed, giving up");
+        s_is_retry = false;
+    }
 }
 
 /**
@@ -501,6 +523,8 @@ static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResul
  */
 static void outbox_sent_callback(DictionaryIterator *iterator, void *context) {
     APP_LOG(APP_LOG_LEVEL_DEBUG, "Outbox send success");
+    // Reset retry flag on success so next failure can retry
+    s_is_retry = false;
 }
 
 /**
