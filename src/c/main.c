@@ -265,8 +265,8 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
                 ((value - CHART_Y_MIN) * chart_height / (CHART_Y_MAX - CHART_Y_MIN));
 
         // Draw filled circle for each point
-        // Most recent dot (i=0) uses full radius, others are 1px smaller
-        int radius = (i == 0) ? CHART_DOT_RADIUS : CHART_DOT_RADIUS - 1;
+        // Most recent dot (i=0) uses full radius if within 10 minutes, others are 1px smaller
+        int radius = (i == 0 && total_minutes_ago < 10) ? CHART_DOT_RADIUS : CHART_DOT_RADIUS - 1;
         graphics_fill_circle(ctx, GPoint(x, y), radius);
     }
 }
