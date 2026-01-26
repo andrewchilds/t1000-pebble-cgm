@@ -1,6 +1,6 @@
 # T1000
 
-A Pebble watchface that displays real-time Dexcom CGM glucose data and provides highly configurable High and Low Soon alerts. This is a port of the software written for the [custom T1D smartwatch project](https://andrewchilds.com/posts/building-a-t1d-smartwatch-from-scratch).
+A Pebble watchface that displays real-time Dexcom CGM glucose data and provides configurable High and Low Soon alerts. This is a port of the software written for the [custom T1D smartwatch project](https://andrewchilds.com/posts/building-a-t1d-smartwatch-from-scratch).
 
 ![Watch photo](resources/images/watch.jpg)
 

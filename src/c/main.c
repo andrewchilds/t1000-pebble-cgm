@@ -56,6 +56,7 @@ static TextLayer *s_time_ago_layer;
 static BitmapLayer *s_trend_layer;
 static GBitmap *s_trend_bitmap;
 static TextLayer *s_setup_layer;
+static TextLayer *s_no_data_layer;
 static Layer *s_loading_layer;
 static AppTimer *s_loading_timer;
 
@@ -123,6 +124,7 @@ static AppTimer *s_loading_timeout_timer;
 // Forward declarations
 static void update_trend_icon(uint8_t trend);
 static void update_layout_for_cgm_text(const char *cgm_text);
+static void update_time_ago_display(void);
 static void loading_timer_callback(void *data);
 static void loading_timeout_callback(void *data);
 static void show_data_layers(void);
@@ -145,6 +147,7 @@ static void apply_colors() {
     text_layer_set_text_color(s_delta_layer, fg_color);
     text_layer_set_text_color(s_time_ago_layer, fg_color);
     text_layer_set_text_color(s_setup_layer, fg_color);
+    text_layer_set_text_color(s_no_data_layer, fg_color);
 
     // Update bitmap compositing mode and reload trend icon
     // GCompOpOr for white-on-black icons, GCompOpAnd for black-on-white icons
@@ -242,12 +245,12 @@ static void loading_timeout_callback(void *data) {
 }
 
 /**
- * Show all CGM data layers
+ * Show all CGM data layers (except CGM value/trend/delta which are controlled by staleness check)
  */
 static void show_data_layers(void) {
-    layer_set_hidden(text_layer_get_layer(s_cgm_value_layer), false);
-    layer_set_hidden(bitmap_layer_get_layer(s_trend_layer), false);
-    layer_set_hidden(text_layer_get_layer(s_delta_layer), false);
+    // Note: CGM value, trend arrow, and delta visibility are controlled by
+    // update_time_ago_display() based on data staleness, not shown unconditionally here.
+    // This prevents a flash of stale data before the staleness check runs.
     layer_set_hidden(text_layer_get_layer(s_time_ago_layer), false);
     layer_set_hidden(s_chart_layer, false);
 }
@@ -261,6 +264,7 @@ static void hide_data_layers(void) {
     layer_set_hidden(text_layer_get_layer(s_delta_layer), true);
     layer_set_hidden(text_layer_get_layer(s_time_ago_layer), true);
     layer_set_hidden(s_chart_layer, true);
+    layer_set_hidden(text_layer_get_layer(s_no_data_layer), true);
 }
 
 /**
@@ -286,6 +290,9 @@ static void hide_loading_show_data(void) {
     // Hide loading layer, show data layers
     layer_set_hidden(s_loading_layer, true);
     show_data_layers();
+    // Update CGM value/trend/delta visibility based on staleness
+    // (will be called again when KEY_CGM_TIME_AGO is processed, but that's fine)
+    update_time_ago_display();
 }
 
 /**
@@ -504,6 +511,7 @@ static void update_layout_for_cgm_text(const char *cgm_text) {
 
 /**
  * Update time ago display based on stored data
+ * Also handles showing "No Data" when CGM data is 60+ minutes old
  */
 static void update_time_ago_display() {
     if (s_last_minutes_ago < 0) {
@@ -515,6 +523,15 @@ static void update_time_ago_display() {
     time_t now = time(NULL);
     int elapsed_minutes = (int)((now - s_last_data_time) / 60);
     int current_minutes_ago = s_last_minutes_ago + elapsed_minutes;
+
+    // Check if data is stale (60+ minutes old)
+    bool is_stale = current_minutes_ago >= 60;
+
+    // Show/hide CGM value, trend arrow, and delta based on staleness
+    layer_set_hidden(text_layer_get_layer(s_cgm_value_layer), is_stale);
+    layer_set_hidden(bitmap_layer_get_layer(s_trend_layer), is_stale);
+    layer_set_hidden(text_layer_get_layer(s_delta_layer), is_stale);
+    layer_set_hidden(text_layer_get_layer(s_no_data_layer), !is_stale);
 
     // Update display
     if (current_minutes_ago == 0) {
@@ -678,6 +695,8 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
         // Show CGM data, hide setup message
         show_data_layers();
         layer_set_hidden(text_layer_get_layer(s_setup_layer), true);
+        // Update CGM value/trend/delta visibility based on staleness
+        update_time_ago_display();
     }
 }
 
@@ -785,6 +804,16 @@ static void main_window_load(Window *window) {
     text_layer_set_text(s_delta_layer, "");
     layer_add_child(window_layer, text_layer_get_layer(s_delta_layer));
 
+    // "No Data" layer - shown when CGM data is 60+ minutes old, centered in CGM value area
+    s_no_data_layer = create_text_layer(
+        GRect(0, cgmValueYPos + 10, bounds.size.w, 28),
+        fonts_get_system_font(FONT_KEY_GOTHIC_28_BOLD),
+        GTextAlignmentCenter
+    );
+    text_layer_set_text(s_no_data_layer, "No Data");
+    layer_set_hidden(text_layer_get_layer(s_no_data_layer), true);
+    layer_add_child(window_layer, text_layer_get_layer(s_no_data_layer));
+
     // Chart layer - below CGM value row
     s_chart_layer = layer_create(GRect(0, 70, bounds.size.w, 74));
     layer_set_update_proc(s_chart_layer, chart_layer_update_proc);
@@ -842,6 +871,7 @@ static void main_window_unload(Window *window) {
     text_layer_destroy(s_delta_layer);
     text_layer_destroy(s_time_ago_layer);
     text_layer_destroy(s_setup_layer);
+    text_layer_destroy(s_no_data_layer);
     bitmap_layer_destroy(s_trend_layer);
     layer_destroy(s_chart_layer);
     layer_destroy(s_loading_layer);
