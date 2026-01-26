@@ -17,7 +17,8 @@
   "pebble": {
     "sdkVersion": "3",
     "targetPlatforms": [
-      "aplite"
+      "aplite",
+      "basalt"
     ],
     "enableMultiJS": true,
     "capabilities": [

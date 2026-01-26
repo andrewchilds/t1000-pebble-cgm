@@ -335,6 +335,22 @@ static void parse_chart_history(const char *history) {
 }
 
 /**
+ * Get color for a glucose value (color platforms only)
+ * Returns red for low, orange for high, green for in-range
+ */
+#ifdef PBL_COLOR
+static GColor get_glucose_color(int value) {
+    if (value <= s_low_threshold) {
+        return GColorRed;
+    } else if (value >= s_high_threshold) {
+        return GColorOrange;
+    } else {
+        return GColorGreen;
+    }
+}
+#endif
+
+/**
  * Draw the CGM dot chart
  */
 static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
@@ -354,7 +370,6 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
 
     // Calculate chart dimensions with margins
     int margin = 4;
-    int chart_width = bounds.size.w - (margin * 2);
     int chart_height = bounds.size.h - (margin * 2);
 
     // Map thresholds to Y coordinates
@@ -364,7 +379,6 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
                  ((s_high_threshold - CHART_Y_MIN) * chart_height / (CHART_Y_MAX - CHART_Y_MIN));
 
     // Draw dashed threshold lines
-    graphics_context_set_stroke_color(ctx, fg_color);
     int dash_length = 4;
     int gap_length = 3;
     for (int x = bounds.origin.x + margin; x < bounds.origin.x + bounds.size.w - margin; x += dash_length + gap_length) {
@@ -372,14 +386,23 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
         if (end_x > bounds.origin.x + bounds.size.w - margin) {
             end_x = bounds.origin.x + bounds.size.w - margin;
         }
+#ifdef PBL_COLOR
+        // Color platforms: red for low threshold, orange for high threshold
+        graphics_context_set_stroke_color(ctx, GColorRed);
+        graphics_draw_line(ctx, GPoint(x, low_y), GPoint(end_x, low_y));
+        graphics_context_set_stroke_color(ctx, GColorOrange);
+        graphics_draw_line(ctx, GPoint(x, high_y), GPoint(end_x, high_y));
+#else
+        // Monochrome platforms: use foreground color for both
+        graphics_context_set_stroke_color(ctx, fg_color);
         graphics_draw_line(ctx, GPoint(x, low_y), GPoint(end_x, low_y));
         graphics_draw_line(ctx, GPoint(x, high_y), GPoint(end_x, high_y));
+#endif
     }
 
     // Draw dots for each data point
     // Data comes in most-recent-first, so we plot right-to-left
     // X position is based on actual timestamp, not array index
-    graphics_context_set_fill_color(ctx, fg_color);
 
     // Calculate elapsed time since data was received to adjust positions
     int elapsed_minutes = 0;
@@ -390,6 +413,7 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
 
     for (int i = 0; i < s_chart_count; i++) {
         int value = s_chart_values[i];
+        int original_value = value;  // Keep original for color determination
 
         // Clamp value to chart range
         if (value < CHART_Y_MIN) value = CHART_Y_MIN;
@@ -410,6 +434,13 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
         // Calculate Y position (invert because screen Y increases downward)
         int y = bounds.origin.y + margin + chart_height -
                 ((value - CHART_Y_MIN) * chart_height / (CHART_Y_MAX - CHART_Y_MIN));
+
+        // Set dot color based on platform
+#ifdef PBL_COLOR
+        graphics_context_set_fill_color(ctx, get_glucose_color(original_value));
+#else
+        graphics_context_set_fill_color(ctx, fg_color);
+#endif
 
         // Draw filled circle for each point
         // Most recent dot (i=0) uses full radius if within 10 minutes, others are 1px smaller

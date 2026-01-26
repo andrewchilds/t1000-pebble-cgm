@@ -12,18 +12,18 @@ A Pebble watchface that displays real-time Dexcom CGM glucose data and provides 
 - Delta (rate of change)
 - Time since last reading
 - 2 hour CGM history
+- Color-coded chart on Pebble Time (green/orange/red for in-range/high/low)
 - Supports mg/dL and mmol/L
 - Configurable high/low threshold lines
 - Configurable high/low alerts
 
 ## Missing Features
 
-- No support for color Pebble displays yet
 - Doesn't handle most error states
 
 ## Requirements
 
-- Pebble / 2 / 2 Duo (Aplite)
+- Pebble / Pebble 2 (Aplite) or Pebble Time / Time Steel (Basalt)
 - Dexcom CGM with Share enabled
 - Dexcom Share account credentials
 
