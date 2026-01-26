@@ -49,6 +49,7 @@
 // Window and layers
 static Window *s_main_window;
 static Layer *s_chart_layer;
+static Layer *s_battery_layer;
 static TextLayer *s_time_date_layer;
 static TextLayer *s_cgm_value_layer;
 static TextLayer *s_delta_layer;
@@ -59,6 +60,10 @@ static TextLayer *s_setup_layer;
 static TextLayer *s_no_data_layer;
 static Layer *s_loading_layer;
 static AppTimer *s_loading_timer;
+
+// Battery state
+static int s_battery_level = 0;
+static bool s_battery_charging = false;
 
 // Trend arrow resources (white on black for normal mode)
 static const uint32_t TREND_ICONS_WHITE[] = {
@@ -163,6 +168,11 @@ static void apply_colors() {
     if (s_loading_layer) {
         layer_mark_dirty(s_loading_layer);
     }
+
+    // Mark battery layer dirty to redraw with new colors
+    if (s_battery_layer) {
+        layer_mark_dirty(s_battery_layer);
+    }
 }
 
 /**
@@ -196,6 +206,67 @@ static void loading_layer_update_proc(Layer *layer, GContext *ctx) {
 
         int y = base_y + y_offset;
         graphics_fill_circle(ctx, GPoint(x, y), dot_radius);
+    }
+}
+
+/**
+ * Draw the battery icon
+ * Shows battery outline with fill level, and charging indicator if plugged in
+ */
+static void battery_layer_update_proc(Layer *layer, GContext *ctx) {
+    GRect bounds = layer_get_bounds(layer);
+    GColor fg_color = s_reversed ? GColorBlack : GColorWhite;
+
+    // Battery icon dimensions
+    int battery_width = 20;
+    int battery_height = 10;
+    int tip_width = 2;
+    int tip_height = 4;
+    int x = (bounds.size.w - battery_width - tip_width) / 2;
+    int y = (bounds.size.h - battery_height) / 2;
+
+    // Draw battery outline (rounded corners)
+    graphics_context_set_stroke_color(ctx, fg_color);
+    graphics_draw_round_rect(ctx, GRect(x, y, battery_width, battery_height), 1);
+
+    // Draw battery tip (positive terminal)
+    graphics_context_set_fill_color(ctx, fg_color);
+    graphics_fill_rect(ctx, GRect(x + battery_width, y + (battery_height - tip_height) / 2, tip_width, tip_height), 0, GCornerNone);
+
+    // Calculate fill width based on battery level (with 1px padding inside)
+    int fill_padding = 2;
+    int max_fill_width = battery_width - (fill_padding * 2);
+    int fill_width = (s_battery_level * max_fill_width) / 100;
+
+    // Draw fill
+    if (fill_width > 0) {
+        graphics_fill_rect(ctx, GRect(x + fill_padding, y + fill_padding, fill_width, battery_height - (fill_padding * 2)), 0, GCornerNone);
+    }
+
+    // Draw charging bolt if charging
+    if (s_battery_charging) {
+        // Simple lightning bolt in center of battery
+        int bolt_x = x + battery_width / 2;
+        int bolt_y = y + battery_height / 2;
+
+        // Draw bolt using lines (inverted color for visibility)
+        GColor bolt_color = s_reversed ? GColorWhite : GColorBlack;
+        graphics_context_set_stroke_color(ctx, bolt_color);
+        graphics_draw_line(ctx, GPoint(bolt_x + 1, y + 1), GPoint(bolt_x - 1, bolt_y));
+        graphics_draw_line(ctx, GPoint(bolt_x - 1, bolt_y), GPoint(bolt_x + 1, bolt_y));
+        graphics_draw_line(ctx, GPoint(bolt_x + 1, bolt_y), GPoint(bolt_x - 1, y + battery_height - 2));
+    }
+}
+
+/**
+ * Battery state change handler
+ */
+static void battery_handler(BatteryChargeState charge_state) {
+    s_battery_level = charge_state.charge_percent;
+    s_battery_charging = charge_state.is_charging;
+
+    if (s_battery_layer) {
+        layer_mark_dirty(s_battery_layer);
     }
 }
 
@@ -828,6 +899,11 @@ static void main_window_load(Window *window) {
     text_layer_set_text(s_time_ago_layer, "---");
     layer_add_child(window_layer, text_layer_get_layer(s_time_ago_layer));
 
+    // Battery layer - bottom left corner
+    s_battery_layer = layer_create(GRect(4, 145, 30, 22));
+    layer_set_update_proc(s_battery_layer, battery_layer_update_proc);
+    layer_add_child(window_layer, s_battery_layer);
+
     // Setup message layer - centered, covers chart area, hidden by default
     s_setup_layer = create_text_layer(
         GRect(6, 60, bounds.size.w - 12, 74),
@@ -875,6 +951,7 @@ static void main_window_unload(Window *window) {
     bitmap_layer_destroy(s_trend_layer);
     layer_destroy(s_chart_layer);
     layer_destroy(s_loading_layer);
+    layer_destroy(s_battery_layer);
 
     if (s_trend_bitmap) {
         gbitmap_destroy(s_trend_bitmap);
@@ -896,6 +973,10 @@ static void init() {
     // Register tick handler
     tick_timer_service_subscribe(MINUTE_UNIT, tick_handler);
 
+    // Register battery state handler and get initial state
+    battery_state_service_subscribe(battery_handler);
+    battery_handler(battery_state_service_peek());
+
     // Register AppMessage callbacks
     app_message_register_inbox_received(inbox_received_callback);
     app_message_register_inbox_dropped(inbox_dropped_callback);
@@ -912,6 +993,7 @@ static void init() {
  */
 static void deinit() {
     tick_timer_service_unsubscribe();
+    battery_state_service_unsubscribe();
     window_destroy(s_main_window);
 }
 
