@@ -335,27 +335,29 @@ static void sync_layer_update_proc(Layer *layer, GContext *ctx) {
 static void alert_layer_update_proc(Layer *layer, GContext *ctx) {
     GRect bounds = layer_get_bounds(layer);
     GColor fg_color = s_reversed ? GColorBlack : GColorWhite;
+    GColor bg_color = s_reversed ? GColorWhite : GColorBlack;
 
     int cx = bounds.size.w / 2;
     int cy = bounds.size.h / 2;
 
-    // Draw triangle outline
-    graphics_context_set_stroke_color(ctx, fg_color);
-    graphics_context_set_stroke_width(ctx, 2);
-
     // Triangle points (pointing up)
-    GPoint top = GPoint(cx, cy - 5);
-    GPoint bottom_left = GPoint(cx - 5, cy + 4);
-    GPoint bottom_right = GPoint(cx + 5, cy + 4);
+    GPoint top = GPoint(cx, cy - 6);
+    GPoint bottom_left = GPoint(cx - 7, cy + 4);
+    GPoint bottom_right = GPoint(cx + 7, cy + 4);
 
-    graphics_draw_line(ctx, top, bottom_left);
-    graphics_draw_line(ctx, bottom_left, bottom_right);
-    graphics_draw_line(ctx, bottom_right, top);
-
-    // Draw exclamation mark inside
+    // Fill triangle with foreground color
     graphics_context_set_fill_color(ctx, fg_color);
-    graphics_fill_rect(ctx, GRect(cx - 1, cy - 5, 2, 5), 0, GCornerNone);
-    graphics_fill_rect(ctx, GRect(cx - 1, cy + 2, 2, 2), 0, GCornerNone);
+    GPathInfo triangle_path_info = {
+        .num_points = 3,
+        .points = (GPoint[]) { top, bottom_left, bottom_right }
+    };
+    GPath *triangle_path = gpath_create(&triangle_path_info);
+    gpath_draw_filled(ctx, triangle_path);
+
+    // Draw exclamation mark inside with background color (1px wide, centered)
+    graphics_context_set_fill_color(ctx, bg_color);
+    graphics_fill_rect(ctx, GRect(cx, cy - 2, 2, 4), 0, GCornerNone);
+    graphics_fill_rect(ctx, GRect(cx, cy + 3, 2, 1), 0, GCornerNone);
 }
 
 /**
@@ -381,8 +383,8 @@ static void update_alert_visibility(void) {
         current_minutes_ago = s_last_minutes_ago + elapsed_minutes;
     }
 
-    // Show alert if data is 10+ minutes old AND we have an outbox failure
-    bool show_alert = (current_minutes_ago >= 10) && s_has_outbox_failure;
+    // Show alert if data is 15+ minutes old AND we have an outbox failure
+    bool show_alert = (current_minutes_ago >= 15) && s_has_outbox_failure;
     layer_set_hidden(s_alert_layer, !show_alert);
 }
 
@@ -1136,12 +1138,12 @@ static void main_window_load(Window *window) {
     layer_add_child(window_layer, s_battery_layer);
 
     // Sync spinner layer - to the right of battery icon
-    s_sync_layer = layer_create(GRect(35, 148, 16, 16));
+    s_sync_layer = layer_create(GRect(34, 148, 16, 16));
     layer_set_update_proc(s_sync_layer, sync_layer_update_proc);
     layer_add_child(window_layer, s_sync_layer);
 
     // Alert triangle layer - same position as sync layer (mutually exclusive visibility)
-    s_alert_layer = layer_create(GRect(35, 148, 16, 16));
+    s_alert_layer = layer_create(GRect(33, 146, 20, 20));
     layer_set_update_proc(s_alert_layer, alert_layer_update_proc);
     layer_set_hidden(s_alert_layer, true);  // Hidden by default
     layer_add_child(window_layer, s_alert_layer);

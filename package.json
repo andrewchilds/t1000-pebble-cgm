@@ -11,6 +11,9 @@
   "keywords": [
     "pebble-app"
   ],
+  "scripts": {
+    "sideload": "pebble clean && pebble build && pebble install --cloudpebble --logs"
+  },
   "dependencies": {
     "pebble-clay": "^1.0.4"
   },
