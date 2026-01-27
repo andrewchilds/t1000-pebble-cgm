@@ -50,6 +50,7 @@
 static Window *s_main_window;
 static Layer *s_chart_layer;
 static Layer *s_battery_layer;
+static Layer *s_sync_layer;
 static TextLayer *s_time_date_layer;
 static TextLayer *s_cgm_value_layer;
 static TextLayer *s_delta_layer;
@@ -117,6 +118,15 @@ static bool s_reversed = false;
 // Retry tracking for outbox failures
 static bool s_is_retry = false;
 
+// Sync spinner state (shown when waiting for phone response)
+static bool s_is_syncing = false;
+static bool s_sync_error = false;  // Show X icon on error
+static int s_sync_frame = 0;
+static AppTimer *s_sync_timer = NULL;
+#define SYNC_SPINNER_FRAMES 8
+#define SYNC_SPINNER_INTERVAL 100  // ms per frame
+#define SYNC_ERROR_DISPLAY_MS 3000  // Show error X for 3 seconds
+
 // Loading state
 static bool s_is_loading = true;
 static int s_loading_frame = 0;
@@ -135,6 +145,11 @@ static void loading_timeout_callback(void *data);
 static void show_data_layers(void);
 static void hide_data_layers(void);
 static void hide_loading_show_data(void);
+static void sync_timer_callback(void *data);
+static void start_sync_spinner(void);
+static void stop_sync_spinner(void);
+static void show_sync_error(void);
+static void sync_error_timer_callback(void *data);
 
 /**
  * Apply colors based on reversed mode to all UI elements
@@ -172,6 +187,11 @@ static void apply_colors() {
     // Mark battery layer dirty to redraw with new colors
     if (s_battery_layer) {
         layer_mark_dirty(s_battery_layer);
+    }
+
+    // Mark sync layer dirty to redraw with new colors
+    if (s_sync_layer) {
+        layer_mark_dirty(s_sync_layer);
     }
 }
 
@@ -267,6 +287,138 @@ static void battery_handler(BatteryChargeState charge_state) {
 
     if (s_battery_layer) {
         layer_mark_dirty(s_battery_layer);
+    }
+}
+
+/**
+ * Draw the sync spinner (small rotating arc)
+ */
+static void sync_layer_update_proc(Layer *layer, GContext *ctx) {
+    if (!s_is_syncing && !s_sync_error) {
+        return;
+    }
+
+    GRect bounds = layer_get_bounds(layer);
+    GColor fg_color = s_reversed ? GColorBlack : GColorWhite;
+
+    int cx = bounds.size.w / 2;
+    int cy = bounds.size.h / 2;
+
+    graphics_context_set_stroke_color(ctx, fg_color);
+    graphics_context_set_stroke_width(ctx, 2);
+
+    if (s_sync_error) {
+        // Draw X icon for error state
+        int size = 4;
+        graphics_draw_line(ctx, GPoint(cx - size, cy - size), GPoint(cx + size, cy + size));
+        graphics_draw_line(ctx, GPoint(cx + size, cy - size), GPoint(cx - size, cy + size));
+    } else {
+        // Draw spinning arc
+        int radius = 4;
+
+        // Draw arc segments based on current frame
+        // Each frame rotates the arc by 45 degrees (360 / 8 frames)
+        int start_angle = s_sync_frame * (360 / SYNC_SPINNER_FRAMES);
+
+        // Draw a 270-degree arc (leaving a 90-degree gap for spinner effect)
+        graphics_draw_arc(ctx,
+            GRect(cx - radius, cy - radius, radius * 2, radius * 2),
+            GOvalScaleModeFitCircle,
+            DEG_TO_TRIGANGLE(start_angle),
+            DEG_TO_TRIGANGLE(start_angle + 270));
+    }
+}
+
+/**
+ * Sync spinner timer callback
+ */
+static void sync_timer_callback(void *data) {
+    if (!s_is_syncing) {
+        s_sync_timer = NULL;
+        return;
+    }
+
+    // Advance to next frame
+    s_sync_frame = (s_sync_frame + 1) % SYNC_SPINNER_FRAMES;
+
+    // Redraw the sync layer
+    if (s_sync_layer) {
+        layer_mark_dirty(s_sync_layer);
+    }
+
+    // Schedule next frame
+    s_sync_timer = app_timer_register(SYNC_SPINNER_INTERVAL, sync_timer_callback, NULL);
+}
+
+/**
+ * Start the sync spinner animation
+ */
+static void start_sync_spinner(void) {
+    if (s_is_syncing) {
+        return;  // Already running
+    }
+
+    s_is_syncing = true;
+    s_sync_frame = 0;
+
+    if (s_sync_layer) {
+        layer_mark_dirty(s_sync_layer);
+    }
+
+    // Start animation timer
+    s_sync_timer = app_timer_register(SYNC_SPINNER_INTERVAL, sync_timer_callback, NULL);
+}
+
+/**
+ * Stop the sync spinner animation
+ */
+static void stop_sync_spinner(void) {
+    if (!s_is_syncing) {
+        return;  // Not running
+    }
+
+    s_is_syncing = false;
+
+    if (s_sync_timer) {
+        app_timer_cancel(s_sync_timer);
+        s_sync_timer = NULL;
+    }
+
+    if (s_sync_layer) {
+        layer_mark_dirty(s_sync_layer);
+    }
+}
+
+/**
+ * Timer callback to clear sync error state
+ */
+static void sync_error_timer_callback(void *data) {
+    s_sync_error = false;
+    s_sync_timer = NULL;
+
+    if (s_sync_layer) {
+        layer_mark_dirty(s_sync_layer);
+    }
+}
+
+/**
+ * Show sync error X icon for 3 seconds
+ */
+static void show_sync_error(void) {
+    // Stop spinner if running
+    s_is_syncing = false;
+    s_sync_error = true;
+
+    // Cancel any existing timer
+    if (s_sync_timer) {
+        app_timer_cancel(s_sync_timer);
+    }
+
+    // Schedule timer to clear error state
+    s_sync_timer = app_timer_register(SYNC_ERROR_DISPLAY_MS, sync_error_timer_callback, NULL);
+
+    if (s_sync_layer) {
+        layer_mark_dirty(s_sync_layer);
     }
 }
 
@@ -656,12 +808,26 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
         layer_mark_dirty(s_chart_layer);
     }
 
+    // Only request data from phone if CGM reading is 4+ minutes old
+    // (Dexcom only updates every 5 minutes, so no point asking more frequently)
+    if (s_last_data_time > 0 && s_last_minutes_ago >= 0) {
+        time_t now = time(NULL);
+        int elapsed_minutes = (int)((now - s_last_data_time) / 60);
+        int current_cgm_age = s_last_minutes_ago + elapsed_minutes;
+
+        if (current_cgm_age < 4) {
+            // Data is still fresh, no need to request update
+            return;
+        }
+    }
+
     // Request data update from phone
     DictionaryIterator *iter;
     app_message_outbox_begin(&iter);
     if (iter) {
         dict_write_uint8(iter, KEY_REQUEST_DATA, 1);
         app_message_outbox_send();
+        start_sync_spinner();
     }
 }
 
@@ -669,6 +835,9 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
  * AppMessage received callback
  */
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
+    // Stop sync spinner - we got a response
+    stop_sync_spinner();
+
     // Hide loading state on first data received
     if (s_is_loading) {
         hide_loading_show_data();
@@ -797,10 +966,12 @@ static void outbox_failed_callback(DictionaryIterator *iterator, AppMessageResul
         } else {
             APP_LOG(APP_LOG_LEVEL_ERROR, "Retry outbox_begin failed: %d", result);
             s_is_retry = false;
+            show_sync_error();
         }
     } else {
         APP_LOG(APP_LOG_LEVEL_ERROR, "Retry also failed, giving up");
         s_is_retry = false;
+        show_sync_error();
     }
 }
 
@@ -904,6 +1075,11 @@ static void main_window_load(Window *window) {
     layer_set_update_proc(s_battery_layer, battery_layer_update_proc);
     layer_add_child(window_layer, s_battery_layer);
 
+    // Sync spinner layer - to the right of battery icon
+    s_sync_layer = layer_create(GRect(35, 148, 16, 16));
+    layer_set_update_proc(s_sync_layer, sync_layer_update_proc);
+    layer_add_child(window_layer, s_sync_layer);
+
     // Setup message layer - centered, covers chart area, hidden by default
     s_setup_layer = create_text_layer(
         GRect(6, 50, bounds.size.w - 12, 74),
@@ -942,6 +1118,12 @@ static void main_window_unload(Window *window) {
         s_loading_timeout_timer = NULL;
     }
 
+    // Cancel sync timer if running
+    if (s_sync_timer) {
+        app_timer_cancel(s_sync_timer);
+        s_sync_timer = NULL;
+    }
+
     text_layer_destroy(s_time_date_layer);
     text_layer_destroy(s_cgm_value_layer);
     text_layer_destroy(s_delta_layer);
@@ -952,6 +1134,7 @@ static void main_window_unload(Window *window) {
     layer_destroy(s_chart_layer);
     layer_destroy(s_loading_layer);
     layer_destroy(s_battery_layer);
+    layer_destroy(s_sync_layer);
 
     if (s_trend_bitmap) {
         gbitmap_destroy(s_trend_bitmap);
