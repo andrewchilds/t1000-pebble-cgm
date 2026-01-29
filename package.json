@@ -130,7 +130,8 @@
       "low_threshold": 7,
       "high_threshold": 8,
       "needs_setup": 9,
-      "reversed": 10
+      "reversed": 10,
+      "sync_error": 11
     }
   }
 }

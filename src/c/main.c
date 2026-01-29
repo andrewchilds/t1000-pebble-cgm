@@ -19,6 +19,7 @@
 #define KEY_HIGH_THRESHOLD 8
 #define KEY_NEEDS_SETUP   9
 #define KEY_REVERSED      10
+#define KEY_SYNC_ERROR    11
 
 // Trend arrow indices (Dexcom trend values)
 #define TREND_NONE        0
@@ -119,6 +120,7 @@ static bool s_reversed = false;
 // Retry tracking for outbox failures
 static bool s_is_retry = false;
 static bool s_has_outbox_failure = false;  // True after retry also fails
+static bool s_has_sync_error = false;      // True when iOS app reports API error
 
 // Sync spinner state (shown during data send/receive)
 static bool s_is_syncing = false;
@@ -383,8 +385,9 @@ static void update_alert_visibility(void) {
         current_minutes_ago = s_last_minutes_ago + elapsed_minutes;
     }
 
-    // Show alert if data is 15+ minutes old AND we have an outbox failure
-    bool show_alert = (current_minutes_ago >= 15) && s_has_outbox_failure;
+    // Show alert if data is 15+ minutes old AND we have a sync failure
+    // (either outbox failure OR iOS app reported API error)
+    bool show_alert = (current_minutes_ago >= 15) && (s_has_outbox_failure || s_has_sync_error);
     layer_set_hidden(s_alert_layer, !show_alert);
 }
 
@@ -893,6 +896,15 @@ static void tick_handler(struct tm *tick_time, TimeUnits units_changed) {
 static void inbox_received_callback(DictionaryIterator *iterator, void *context) {
     // Clear outbox failure flag on successful communication
     s_has_outbox_failure = false;
+
+    // Check for sync error flag from iOS app (API failure)
+    Tuple *sync_error_tuple = dict_find(iterator, KEY_SYNC_ERROR);
+    if (sync_error_tuple) {
+        s_has_sync_error = sync_error_tuple->value->uint8 != 0;
+    } else {
+        // If not present, assume success (for backwards compatibility)
+        s_has_sync_error = false;
+    }
 
     // Show sync spinner briefly to indicate data reception
     start_sync_spinner();

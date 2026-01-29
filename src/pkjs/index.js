@@ -22,6 +22,7 @@ var KEY_LOW_THRESHOLD = 7;
 var KEY_HIGH_THRESHOLD = 8;
 var KEY_NEEDS_SETUP = 9;
 var KEY_REVERSED = 10;
+var KEY_SYNC_ERROR = 11;
 
 // Dexcom Share API endpoints
 var DEXCOM_URLS = {
@@ -83,8 +84,14 @@ function loadVibeState() {
 			vibeHighConditionStartTime = parsed.vibeHighConditionStartTime || null;
 			lastHighVibeTime = parsed.lastHighVibeTime || null;
 			lastLowSoonVibeTime = parsed.lastLowSoonVibeTime || null;
-			console.log("Vibe state loaded: highStart=" + vibeHighConditionStartTime +
-				", lastHigh=" + lastHighVibeTime + ", lastLowSoon=" + lastLowSoonVibeTime);
+			console.log(
+				"Vibe state loaded: highStart=" +
+					vibeHighConditionStartTime +
+					", lastHigh=" +
+					lastHighVibeTime +
+					", lastLowSoon=" +
+					lastLowSoonVibeTime
+			);
 		} catch (e) {
 			console.log("Error parsing vibe state: " + e);
 		}
@@ -418,6 +425,7 @@ function processReadings(readings, fromCache) {
 	message[KEY_HIGH_THRESHOLD] = settings.highThreshold;
 	message[KEY_REVERSED] = settings.reversed ? 1 : 0;
 	message[KEY_NEEDS_SETUP] = 0;
+	message[KEY_SYNC_ERROR] = 0; // Success - no sync error
 
 	console.log(
 		"Sending: value=" +
@@ -478,7 +486,14 @@ function calculateVelocity(readings) {
 			}
 			var gap = thisTime - nextTime; // readings are most-recent-first
 			if (gap > maxGapMs) {
-				console.log("Velocity calculation skipped: gap of " + Math.round(gap / 60000) + " min between readings " + i + " and " + (i + 1));
+				console.log(
+					"Velocity calculation skipped: gap of " +
+						Math.round(gap / 60000) +
+						" min between readings " +
+						i +
+						" and " +
+						(i + 1)
+				);
 				return null;
 			}
 		}
@@ -615,11 +630,13 @@ function checkVibrationAlert(value) {
  */
 function sendError(errorText, needsSetup) {
 	var message = {};
-	message[KEY_CGM_VALUE] = errorText;
+	message[KEY_CGM_VALUE] = "";
 	message[KEY_CGM_DELTA] = "";
 	message[KEY_CGM_TREND] = 0;
 	message[KEY_CGM_TIME_AGO] = 0;
 	message[KEY_NEEDS_SETUP] = needsSetup ? 1 : 0;
+	// Signal sync error unless this is just a setup issue
+	message[KEY_SYNC_ERROR] = needsSetup ? 0 : 1;
 
 	Pebble.sendAppMessage(
 		message,
