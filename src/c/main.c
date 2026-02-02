@@ -1085,7 +1085,7 @@ static void update_time() {
 
     // Format date (day of week + day number)
     char date_str[12];
-    strftime(date_str, sizeof(date_str), "%a %d", tick_time);
+    strftime(date_str, sizeof(date_str), "%a %e", tick_time);
 
     // Combine with two spaces between
     snprintf(s_time_date_buffer, sizeof(s_time_date_buffer), "%s  %s", time_ptr, date_str);
