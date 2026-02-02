@@ -23,6 +23,7 @@ var KEY_HIGH_THRESHOLD = 8;
 var KEY_NEEDS_SETUP = 9;
 var KEY_REVERSED = 10;
 var KEY_SYNC_ERROR = 11;
+var KEY_MEAL_DATA = 12;
 
 // Dexcom Share API endpoints
 var DEXCOM_URLS = {
@@ -65,7 +66,8 @@ var settings = {
 	vibeEnabled: false,
 	vibeHighThreshold: 250,
 	vibeDelayMinutes: 60,
-	vibeRepeatMinutes: 60
+	vibeRepeatMinutes: 60,
+	saltieApiToken: ""
 };
 
 // Vibration state (persisted to localStorage to survive app restarts)
@@ -350,6 +352,50 @@ function parseDexcomTimestamp(dtString) {
 }
 
 /**
+ * Get meal data string for today's meals within the chart timeframe (last 120 minutes or next 20 minutes)
+ * Format: "carbs:minutesAgo,carbs:minutesAgo,..." (e.g., "35:30,42:-10")
+ * Negative minutesAgo means future meal
+ */
+function getMealDataString() {
+	var stored = localStorage.getItem("saltie-meals");
+	if (!stored) {
+		return "";
+	}
+
+	try {
+		var meals = JSON.parse(stored);
+		if (!meals || meals.length === 0) {
+			return "";
+		}
+
+		var now = Date.now();
+		var mealStrings = [];
+
+		for (var i = 0; i < meals.length; i++) {
+			var meal = meals[i];
+			if (!meal.eaten_at || !meal.carbs_counted) {
+				continue;
+			}
+
+			// Parse meal timestamp
+			var mealTime = new Date(meal.eaten_at).getTime();
+			var minutesAgo = Math.round((now - mealTime) / 60000);
+
+			// Include meals from the last 120 minutes OR upcoming meals in the next 20 minutes
+			if ((minutesAgo >= 0 && minutesAgo <= 120) || (minutesAgo < 0 && minutesAgo >= -20)) {
+				var carbs = Math.round(meal.carbs_counted);
+				mealStrings.push(carbs + ":" + minutesAgo);
+			}
+		}
+
+		return mealStrings.join(",");
+	} catch (e) {
+		console.log("Error parsing meal data: " + e);
+		return "";
+	}
+}
+
+/**
  * Process glucose readings and send to watch
  */
 function processReadings(readings, fromCache) {
@@ -413,6 +459,14 @@ function processReadings(readings, fromCache) {
 	checkLowSoonAlert(readings);
 	checkVibrationAlert(latestValue);
 
+	// Fetch fresh Saltie data if token is configured
+	if (settings.saltieApiToken) {
+		fetchSaltieData();
+	}
+
+	// Get meal data string
+	var mealData = getMealDataString();
+
 	// Send data to watch
 	var message = {};
 	message[KEY_CGM_VALUE] = formatGlucose(latestValue);
@@ -426,6 +480,7 @@ function processReadings(readings, fromCache) {
 	message[KEY_REVERSED] = settings.reversed ? 1 : 0;
 	message[KEY_NEEDS_SETUP] = 0;
 	message[KEY_SYNC_ERROR] = 0; // Success - no sync error
+	message[KEY_MEAL_DATA] = mealData;
 
 	console.log(
 		"Sending: value=" +
@@ -442,7 +497,8 @@ function processReadings(readings, fromCache) {
 			minutesAgo +
 			"min, history=" +
 			readings.length +
-			" points"
+			" points, meals=" +
+			mealData
 	);
 
 	Pebble.sendAppMessage(
@@ -699,6 +755,30 @@ function fetchData() {
 }
 
 /**
+ * Fetch Saltie meal data
+ */
+function fetchSaltieData() {
+	if (!settings.saltieApiToken) {
+		console.log("No Saltie API token configured");
+		return;
+	}
+
+	console.log("Fetching Saltie meal data...");
+
+	httpRequest("GET", "https://api.saltie.app/api/v1/meals/today", null, {
+		"api-token": settings.saltieApiToken
+	})
+		.then(function (data) {
+			console.log("Saltie data received: " + JSON.stringify(data));
+			// Store the meal data for future use
+			localStorage.setItem("saltie-meals", JSON.stringify(data));
+		})
+		.catch(function (error) {
+			console.log("Saltie API error: " + error.message);
+		});
+}
+
+/**
  * Schedule next poll based on smart timing
  * Poll at 5 minutes + 45 seconds after last good reading
  */
@@ -764,7 +844,8 @@ Pebble.addEventListener("showConfiguration", function (e) {
 		vibeEnabled: settings.vibeEnabled,
 		vibeHighThreshold: settings.vibeHighThreshold,
 		vibeDelayMinutes: settings.vibeDelayMinutes,
-		vibeRepeatMinutes: settings.vibeRepeatMinutes
+		vibeRepeatMinutes: settings.vibeRepeatMinutes,
+		saltieApiToken: settings.saltieApiToken
 	};
 
 	Pebble.openURL(clay.generateUrl(claySettings));
@@ -807,6 +888,7 @@ Pebble.addEventListener("webviewclosed", function (e) {
 	if (dict.vibeDelayMinutes !== undefined) settings.vibeDelayMinutes = parseInt(dict.vibeDelayMinutes.value, 10) || 60;
 	if (dict.vibeRepeatMinutes !== undefined)
 		settings.vibeRepeatMinutes = parseInt(dict.vibeRepeatMinutes.value, 10) || 60;
+	if (dict.saltieApiToken !== undefined) settings.saltieApiToken = dict.saltieApiToken.value || "";
 
 	saveSettings();
 

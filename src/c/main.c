@@ -20,6 +20,7 @@
 #define KEY_NEEDS_SETUP   9
 #define KEY_REVERSED      10
 #define KEY_SYNC_ERROR    11
+#define KEY_MEAL_DATA     12
 
 // Trend arrow indices (Dexcom trend values)
 #define TREND_NONE        0
@@ -102,6 +103,12 @@ static char s_time_ago_buffer[16];
 static int16_t s_chart_values[CHART_MAX_POINTS];
 static int16_t s_chart_minutes_ago[CHART_MAX_POINTS];  // Minutes ago for each point
 static int s_chart_count = 0;
+
+// Meal data
+#define MAX_MEALS 10
+static int16_t s_meal_carbs[MAX_MEALS];
+static int16_t s_meal_minutes_ago[MAX_MEALS];
+static int s_meal_count = 0;
 
 // Current trend
 static uint8_t s_current_trend = TREND_NONE;
@@ -621,6 +628,61 @@ static void parse_chart_history(const char *history) {
 }
 
 /**
+ * Parse meal data with timestamps
+ * Format: "35:30,42:90,..." (carbs:minutesAgo pairs)
+ * minutesAgo can be negative for future meals
+ */
+static void parse_meal_data(const char *meal_data) {
+    if (meal_data == NULL || strlen(meal_data) == 0) {
+        s_meal_count = 0;
+        return;
+    }
+
+    s_meal_count = 0;
+    const char *ptr = meal_data;
+
+    while (*ptr && s_meal_count < MAX_MEALS) {
+        // Parse carbs value
+        int carbs = 0;
+        while (*ptr >= '0' && *ptr <= '9') {
+            carbs = carbs * 10 + (*ptr - '0');
+            ptr++;
+        }
+
+        // Parse minutes ago (after colon), can be negative
+        int minutes_ago = 0;
+        bool is_negative = false;
+        if (*ptr == ':') {
+            ptr++;
+            if (*ptr == '-') {
+                is_negative = true;
+                ptr++;
+            }
+            while (*ptr >= '0' && *ptr <= '9') {
+                minutes_ago = minutes_ago * 10 + (*ptr - '0');
+                ptr++;
+            }
+            if (is_negative) {
+                minutes_ago = -minutes_ago;
+            }
+        }
+
+        if (carbs > 0) {
+            s_meal_carbs[s_meal_count] = (int16_t)carbs;
+            s_meal_minutes_ago[s_meal_count] = (int16_t)minutes_ago;
+            s_meal_count++;
+        }
+
+        // Skip comma
+        if (*ptr == ',') {
+            ptr++;
+        } else if (*ptr != '\0') {
+            break;
+        }
+    }
+}
+
+/**
  * Get color for a glucose value (color platforms only)
  * Returns red for low, orange for high, green for in-range
  */
@@ -732,6 +794,165 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
         // Most recent dot (i=0) uses full radius if within 10 minutes, others are 1px smaller
         int radius = (i == 0 && total_minutes_ago < 10) ? CHART_DOT_RADIUS : CHART_DOT_RADIUS - 1;
         graphics_fill_circle(ctx, GPoint(x, y), radius);
+    }
+
+    // Draw meal markers
+    // Use the same font as time ago layer: GOTHIC_24_BOLD
+    GFont meal_font = fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD);
+
+    for (int i = 0; i < s_meal_count; i++) {
+        int carbs = s_meal_carbs[i];
+        int total_minutes_ago = s_meal_minutes_ago[i] + elapsed_minutes;
+        bool is_future = total_minutes_ago < 0;
+
+        // Calculate X position (same as CGM dots)
+        int pixel_offset = (total_minutes_ago * CHART_DOT_SPACING) / 5;
+        int meal_x = bounds.origin.x + bounds.size.w - margin - pixel_offset;
+        int text_y_offset = -6;
+
+        // For future meals (within next 20 minutes), position at right edge
+        if (is_future) {
+            meal_x = bounds.origin.x + bounds.size.w - margin - 6;
+        }
+
+        // Skip meals that have scrolled off the left edge
+        if (!is_future && meal_x < bounds.origin.x + margin) {
+            continue;
+        }
+
+        // Format carbs as string
+        char carbs_text[4];
+        snprintf(carbs_text, sizeof(carbs_text), "%d", carbs);
+
+        // Calculate text size
+        GSize text_size = graphics_text_layout_get_content_size(
+            carbs_text,
+            meal_font,
+            GRect(0, 0, 100, 30),
+            GTextOverflowModeTrailingEllipsis,
+            GTextAlignmentLeft
+        );
+
+        // Find the CGM value at this time (or most recent if future)
+        int reference_value = 140; // Default to middle value
+        if (s_chart_count > 0) {
+            if (is_future || total_minutes_ago <= 0) {
+                // Use most recent CGM value for future meals
+                reference_value = s_chart_values[0];
+            } else {
+                // Find the closest CGM reading to this meal time
+                int min_time_diff = 999;
+                for (int j = 0; j < s_chart_count; j++) {
+                    int cgm_time = s_chart_minutes_ago[j] + elapsed_minutes;
+                    int time_diff = abs(cgm_time - total_minutes_ago);
+                    if (time_diff < min_time_diff) {
+                        min_time_diff = time_diff;
+                        reference_value = s_chart_values[j];
+                    }
+                }
+            }
+        }
+
+        // Clamp reference value to chart range for Y calculation
+        int clamped_value = reference_value;
+        if (clamped_value < CHART_Y_MIN) clamped_value = CHART_Y_MIN;
+        if (clamped_value > CHART_Y_MAX) clamped_value = CHART_Y_MAX;
+
+        // Calculate the Y position of the CGM data point
+        int cgm_y = bounds.origin.y + margin + chart_height -
+                    ((clamped_value - CHART_Y_MIN) * chart_height / (CHART_Y_MAX - CHART_Y_MIN));
+
+        // Position above if CGM is below 180, below if CGM is above 180
+        bool show_above = reference_value < 180;
+        int padding_x = 3;
+        int box_height = 21;
+        int triangle_size = 4;
+        int gap_from_cgm = 6;  // Space between triangle tip and CGM point
+
+        int box_y;
+        if (show_above) {
+            // Position above the CGM point
+            box_y = cgm_y - box_height - triangle_size - gap_from_cgm;
+            // Don't go above chart bounds
+            if (box_y < bounds.origin.y + margin) {
+                box_y = bounds.origin.y + margin;
+            }
+        } else {
+            // Position below the CGM point
+            box_y = cgm_y + triangle_size + gap_from_cgm;
+            // Don't go below chart bounds
+            if (box_y + box_height > bounds.origin.y + bounds.size.h - margin) {
+                box_y = bounds.origin.y + bounds.size.h - margin - box_height;
+            }
+        }
+
+        // Draw rounded rectangle background (reversed colors)
+        GRect bg_rect = GRect(
+            meal_x - text_size.w / 2 - padding_x,
+            box_y,
+            text_size.w + padding_x * 2,
+            box_height
+        );
+
+        graphics_context_set_fill_color(ctx, fg_color);
+        graphics_fill_rect(ctx, bg_rect, 3, GCornersAll);
+
+        // Draw triangular pointer pointing to CGM data
+        int triangle_x = meal_x; // Center of meal badge
+        GPoint triangle_points[3];
+
+        if (show_above) {
+            // Triangle pointing down from bottom of badge
+            int triangle_y = bg_rect.origin.y + bg_rect.size.h;
+            triangle_points[0] = GPoint(triangle_x, triangle_y + triangle_size);
+            triangle_points[1] = GPoint(triangle_x - triangle_size, triangle_y);
+            triangle_points[2] = GPoint(triangle_x + triangle_size, triangle_y);
+        } else {
+            // Triangle pointing up from top of badge
+            int triangle_y = bg_rect.origin.y;
+            triangle_points[0] = GPoint(triangle_x, triangle_y - triangle_size);
+            triangle_points[1] = GPoint(triangle_x - triangle_size, triangle_y);
+            triangle_points[2] = GPoint(triangle_x + triangle_size, triangle_y);
+        }
+
+        GPathInfo triangle_info = {
+            .num_points = 3,
+            .points = triangle_points
+        };
+        GPath *triangle = gpath_create(&triangle_info);
+        gpath_draw_filled(ctx, triangle);
+        gpath_destroy(triangle);
+
+        // For future meals, draw right-pointing arrow
+        if (is_future) {
+            int arrow_y = box_y + box_height / 2;
+            int arrow_x = bg_rect.origin.x + bg_rect.size.w;
+
+            GPoint arrow_points[3];
+            arrow_points[0] = GPoint(arrow_x + 6, arrow_y);
+            arrow_points[1] = GPoint(arrow_x, arrow_y - 4);
+            arrow_points[2] = GPoint(arrow_x, arrow_y + 4);
+
+            GPathInfo arrow_info = {
+                .num_points = 3,
+                .points = arrow_points
+            };
+            GPath *arrow = gpath_create(&arrow_info);
+            gpath_draw_filled(ctx, arrow);
+            gpath_destroy(arrow);
+        }
+
+        // Draw text (reversed color) - centered in box
+        graphics_context_set_text_color(ctx, bg_color);
+        graphics_draw_text(
+            ctx,
+            carbs_text,
+            meal_font,
+            GRect(meal_x - text_size.w / 2, box_y + text_y_offset, text_size.w, box_height),
+            GTextOverflowModeTrailingEllipsis,
+            GTextAlignmentLeft,
+            NULL
+        );
     }
 }
 
@@ -947,6 +1168,13 @@ static void inbox_received_callback(DictionaryIterator *iterator, void *context)
     Tuple *history_tuple = dict_find(iterator, KEY_CGM_HISTORY);
     if (history_tuple) {
         parse_chart_history(history_tuple->value->cstring);
+        layer_mark_dirty(s_chart_layer);
+    }
+
+    // Read meal data
+    Tuple *meal_data_tuple = dict_find(iterator, KEY_MEAL_DATA);
+    if (meal_data_tuple) {
+        parse_meal_data(meal_data_tuple->value->cstring);
         layer_mark_dirty(s_chart_layer);
     }
 

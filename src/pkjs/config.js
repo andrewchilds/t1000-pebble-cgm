@@ -176,6 +176,29 @@ module.exports = [
 		]
 	},
 	{
+		type: "section",
+		items: [
+			{
+				type: "heading",
+				defaultValue: "Saltie Integration"
+			},
+			{
+				type: "input",
+				messageKey: "saltieApiToken",
+				label: "Saltie API Token",
+				attributes: {
+					placeholder: "Enter your Saltie API token",
+					autocapitalize: "off",
+					autocorrect: "off"
+				}
+			},
+			{
+				type: "text",
+				defaultValue: "<small>Optional: Enter your Saltie API token to track meals</small>"
+			}
+		]
+	},
+	{
 		type: "submit",
 		defaultValue: "Save Settings"
 	}

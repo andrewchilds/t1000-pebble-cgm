@@ -131,7 +131,8 @@
       "high_threshold": 8,
       "needs_setup": 9,
       "reversed": 10,
-      "sync_error": 11
+      "sync_error": 11,
+      "meal_data": 12
     }
   }
 }
