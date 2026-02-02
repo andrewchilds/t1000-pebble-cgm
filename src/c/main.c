@@ -811,8 +811,9 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
         int text_y_offset = -6;
 
         // For future meals (within next 20 minutes), position at right edge
+        // Shift left to leave room for right-pointing arrow
         if (is_future) {
-            meal_x = bounds.origin.x + bounds.size.w - margin - 6;
+            meal_x = bounds.origin.x + bounds.size.w - margin - 10;
         }
 
         // Skip meals that have scrolled off the left edge
@@ -865,6 +866,19 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
         // Position above if CGM is below 180, below if CGM is above 180
         bool show_above = reference_value < 180;
         int padding_x = 3;
+
+        // Constrain meal_x to keep box within visible bounds
+        // Box extends text_size.w/2 + padding_x in each direction
+        int half_box_width = text_size.w / 2 + padding_x;
+        int arrow_space = is_future ? 6 : 0;  // Extra space for right arrow on future meals
+        int min_x = bounds.origin.x + margin + half_box_width;
+        int max_x = bounds.origin.x + bounds.size.w - margin - half_box_width - arrow_space;
+
+        if (meal_x < min_x) {
+            meal_x = min_x;
+        } else if (meal_x > max_x) {
+            meal_x = max_x;
+        }
         int box_height = 21;
         int triangle_size = 4;
         int gap_from_cgm = 6;  // Space between triangle tip and CGM point
@@ -897,41 +911,43 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
         graphics_context_set_fill_color(ctx, fg_color);
         graphics_fill_rect(ctx, bg_rect, 3, GCornersAll);
 
-        // Draw triangular pointer pointing to CGM data
-        int triangle_x = meal_x; // Center of meal badge
-        GPoint triangle_points[3];
+        // Draw triangular pointer pointing to CGM data (only for past meals)
+        if (!is_future) {
+            int triangle_x = meal_x; // Center of meal badge
+            GPoint triangle_points[3];
 
-        if (show_above) {
-            // Triangle pointing down from bottom of badge
-            int triangle_y = bg_rect.origin.y + bg_rect.size.h;
-            triangle_points[0] = GPoint(triangle_x, triangle_y + triangle_size);
-            triangle_points[1] = GPoint(triangle_x - triangle_size, triangle_y);
-            triangle_points[2] = GPoint(triangle_x + triangle_size, triangle_y);
-        } else {
-            // Triangle pointing up from top of badge
-            int triangle_y = bg_rect.origin.y;
-            triangle_points[0] = GPoint(triangle_x, triangle_y - triangle_size);
-            triangle_points[1] = GPoint(triangle_x - triangle_size, triangle_y);
-            triangle_points[2] = GPoint(triangle_x + triangle_size, triangle_y);
+            if (show_above) {
+                // Triangle pointing down from bottom of badge
+                int triangle_y = bg_rect.origin.y + bg_rect.size.h;
+                triangle_points[0] = GPoint(triangle_x, triangle_y + triangle_size);
+                triangle_points[1] = GPoint(triangle_x - triangle_size, triangle_y);
+                triangle_points[2] = GPoint(triangle_x + triangle_size, triangle_y);
+            } else {
+                // Triangle pointing up from top of badge
+                int triangle_y = bg_rect.origin.y;
+                triangle_points[0] = GPoint(triangle_x, triangle_y - triangle_size);
+                triangle_points[1] = GPoint(triangle_x - triangle_size, triangle_y);
+                triangle_points[2] = GPoint(triangle_x + triangle_size, triangle_y);
+            }
+
+            GPathInfo triangle_info = {
+                .num_points = 3,
+                .points = triangle_points
+            };
+            GPath *triangle = gpath_create(&triangle_info);
+            gpath_draw_filled(ctx, triangle);
+            gpath_destroy(triangle);
         }
-
-        GPathInfo triangle_info = {
-            .num_points = 3,
-            .points = triangle_points
-        };
-        GPath *triangle = gpath_create(&triangle_info);
-        gpath_draw_filled(ctx, triangle);
-        gpath_destroy(triangle);
 
         // For future meals, draw right-pointing arrow
         if (is_future) {
             int arrow_y = box_y + box_height / 2;
-            int arrow_x = bg_rect.origin.x + bg_rect.size.w;
+            int arrow_x = bg_rect.origin.x + bg_rect.size.w - 1;
 
             GPoint arrow_points[3];
-            arrow_points[0] = GPoint(arrow_x + 6, arrow_y);
+            arrow_points[0] = GPoint(arrow_x + 5, arrow_y);
             arrow_points[1] = GPoint(arrow_x, arrow_y - 4);
-            arrow_points[2] = GPoint(arrow_x, arrow_y + 4);
+            arrow_points[2] = GPoint(arrow_x, arrow_y + 5);
 
             GPathInfo arrow_info = {
                 .num_points = 3,
