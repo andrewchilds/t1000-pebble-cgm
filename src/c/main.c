@@ -1413,7 +1413,7 @@ static void main_window_load(Window *window) {
 
     // Setup message layer - centered, covers chart area, hidden by default
     s_setup_layer = create_text_layer(
-        GRect(6, 50, bounds.size.w - 12, 74),
+        GRect(6, 70, bounds.size.w - 12, 74),
         fonts_get_system_font(FONT_KEY_GOTHIC_24_BOLD),
         GTextAlignmentCenter
     );
