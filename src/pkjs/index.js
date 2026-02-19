@@ -688,7 +688,7 @@ function sendError(errorText, needsSetup) {
 	var message = {};
 	message[KEY_CGM_VALUE] = "";
 	message[KEY_CGM_DELTA] = "";
-	message[KEY_CGM_TREND] = 0;
+	message[KEY_CGM_TREND] = 255; // Special value: hide trend icon
 	message[KEY_CGM_TIME_AGO] = 0;
 	message[KEY_NEEDS_SETUP] = needsSetup ? 1 : 0;
 	// Signal sync error unless this is just a setup issue

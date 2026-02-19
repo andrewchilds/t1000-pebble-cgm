@@ -31,6 +31,7 @@
 #define TREND_DOWN_45     5
 #define TREND_DOWN        6
 #define TREND_DOUBLE_DOWN 7
+#define TREND_HIDE        255  // Special value: hide trend icon entirely
 
 // Alert types
 #define ALERT_NONE        0
@@ -976,6 +977,12 @@ static void chart_layer_update_proc(Layer *layer, GContext *ctx) {
  * Update the trend arrow icon
  */
 static void update_trend_icon(uint8_t trend) {
+    // Special value to hide the trend icon entirely
+    if (trend == TREND_HIDE) {
+        layer_set_hidden(bitmap_layer_get_layer(s_trend_layer), true);
+        return;
+    }
+
     if (trend > TREND_DOUBLE_DOWN) {
         trend = TREND_NONE;
     }
