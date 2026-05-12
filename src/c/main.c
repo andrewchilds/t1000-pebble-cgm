@@ -987,6 +987,9 @@ static void update_trend_icon(uint8_t trend) {
         trend = TREND_NONE;
     }
 
+    // Ensure trend layer is visible (may have been hidden by TREND_HIDE)
+    layer_set_hidden(bitmap_layer_get_layer(s_trend_layer), false);
+
     s_current_trend = trend;
 
     // Destroy old bitmap if exists
