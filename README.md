@@ -27,8 +27,8 @@ A Pebble watchface that displays real-time Dexcom CGM glucose data and provides 
 
 ## Installation Instructions
 
-Install from the Rebble app store:
-https://apps.rebble.io/en_US/application/6972fd68ae32660009f7c242
+Install from the Pebble app store:
+https://apps.repebble.com/d7c32410f9a44590a63b85ba
 
 ## Building
 
