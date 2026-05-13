@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "model": "claude-opus-4-5-20251101",
+  "spinnerTipsEnabled": false,
+  "includeCoAuthoredBy": false,
+  "autoMemoryEnabled": false,
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4-5-20251101"
+  }
+}
